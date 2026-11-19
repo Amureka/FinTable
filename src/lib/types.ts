@@ -22,9 +22,23 @@ export interface DepositPreviewGoal {
   targetAmount: number;
   currentAmount: number;
   remainingAmount: number;
+  monthEnd: string;
   plannedAmount: number;
   currentMonthDeposits: number;
   previousMonthsDeposits: MonthAmount[];
+}
+
+// Подушка безопасности в окне внесения (не цель: без срока и суммы)
+export interface DepositPreviewCushion {
+  goalId: string;
+  currentAmount: number;
+  currentMonthDeposits: number;
+  previousMonthsDeposits: MonthAmount[];
+}
+
+export interface DepositPreview {
+  goals: DepositPreviewGoal[];
+  cushion: DepositPreviewCushion;
 }
 
 export interface DepositSummary {

@@ -17,6 +17,7 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cushionAmount, setCushionAmount] = useState(0);
   const [budget, setBudget] = useState<BudgetOverview | null>(null);
   const [budgetRevision, setBudgetRevision] = useState(0);
 
@@ -28,6 +29,15 @@ export default function App() {
       message.error(`Не удалось загрузить цели: ${(error as Error).message}`);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadCushion = useCallback(async () => {
+    try {
+      const result = await callApi<{ amount: number }>("getCushion");
+      setCushionAmount(result.amount);
+    } catch (error) {
+      message.error(`Не удалось загрузить подушку безопасности: ${(error as Error).message}`);
     }
   }, []);
 
@@ -43,13 +53,15 @@ export default function App() {
   const reloadAll = useCallback(() => {
     loadGoals();
     loadBudget();
+    loadCushion();
     setBudgetRevision(value => value + 1);
-  }, [loadGoals, loadBudget]);
+  }, [loadGoals, loadBudget, loadCushion]);
 
   useEffect(() => {
     loadGoals();
     loadBudget();
-  }, [loadGoals, loadBudget]);
+    loadCushion();
+  }, [loadGoals, loadBudget, loadCushion]);
 
   const currentBudgetMonth = budget?.months[0] ?? null;
 
@@ -94,7 +106,7 @@ export default function App() {
             onChanged={reloadAll}
           />
 
-          <GoalsDashboard goals={goals} loading={loading} onCreateGoal={() => setCreateOpen(true)} />
+          <GoalsDashboard goals={goals} cushionAmount={cushionAmount} loading={loading} onCreateGoal={() => setCreateOpen(true)} />
         </Layout.Content>
       </Layout>
 

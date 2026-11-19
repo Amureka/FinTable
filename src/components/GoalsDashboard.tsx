@@ -4,18 +4,29 @@ import { Goal, STATUS_COMPLETED } from "../lib/types";
 
 interface Props {
   goals: Goal[];
+  cushionAmount: number;
   loading: boolean;
   onCreateGoal: () => void;
 }
 
-export default function GoalsDashboard({ goals, loading, onCreateGoal }: Props) {
-  const savedTotal = goals.reduce((sum, goal) => sum + goal.currentAmount, 0);
+export default function GoalsDashboard({ goals, cushionAmount, loading, onCreateGoal }: Props) {
+  const savedTotal = goals.reduce((sum, goal) => sum + goal.currentAmount, 0) + cushionAmount;
 
   return (
     <>
-      <Card loading={loading} style={{ marginBottom: 16 }}>
-        <Statistic title="В копилке" value={savedTotal} suffix="₽" groupSeparator=" " />
-      </Card>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card loading={loading} style={{ height: "100%" }}>
+            <Statistic title="В копилке" value={savedTotal} suffix="₽" groupSeparator=" " />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card loading={loading} style={{ height: "100%" }}>
+            <Statistic title="Подушка безопасности" value={cushionAmount} suffix="₽" groupSeparator=" " />
+            <Typography.Text type="secondary">Резерв без срока: сюда попадает остаток, когда все цели профинансированы.</Typography.Text>
+          </Card>
+        </Col>
+      </Row>
 
       {!loading && goals.length === 0 ? (
         <Card>

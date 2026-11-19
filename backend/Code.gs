@@ -40,6 +40,10 @@ const ACTIVE_STATUS_VALUES = ["Активна", "active"];
 
 const MONEY_EPSILON = 0.005;
 
+// Подушка безопасности: «цель» без срока и суммы. В листе Goals строки нет,
+// взносы на неё пишутся в GoalDeposits с этим goalId.
+const CUSHION_GOAL_ID = "cushion";
+
 // =========================
 // GET запросы
 // =========================
@@ -95,6 +99,9 @@ function runAction_(action, data) {
 
     case "getDepositSummary":
       return getDepositSummary(data.month);
+
+    case "getCushion":
+      return { amount: sumDepositsByGoal_()[CUSHION_GOAL_ID] || 0 };
 
     case "saveDeposit":
       return withLock_(() => saveDeposit(data));
@@ -188,7 +195,8 @@ function getPlan() {
 // Внесение денег: превью
 // =========================
 
-// Данные для окна «Внести деньги»: по каждой активной цели
+// Данные для окна «Внести деньги»: активные цели и подушка безопасности.
+// Возвращает { goals: [...], cushion: {...} }
 function getDepositPreview(requestedMonth) {
   const currentMonth = getMonthKey_(requestedMonth);
   const previousMonths = [-3, -2, -1].map(shift => shiftMonth_(currentMonth, shift));
@@ -197,7 +205,16 @@ function getDepositPreview(requestedMonth) {
   const goalDeposits = readGoalDepositRows_();
   const depositedByGoal = sumDepositsByGoal_();
 
-  return readGoals_()
+  const depositedInMonth = (goalId, month) => goalDeposits
+    .filter(d => String(d.goalId) === String(goalId) && d.month === month)
+    .reduce((sum, d) => sum + d.actualAmount, 0);
+
+  const previousMonthsDeposits = goalId => previousMonths.map(month => ({
+    month: month,
+    amount: depositedInMonth(goalId, month)
+  }));
+
+  const goals = readGoals_()
     .filter(isGoalActive_)
     .map(goal => {
       const goalId = String(goal.id);
@@ -205,10 +222,6 @@ function getDepositPreview(requestedMonth) {
       const plannedAmount = plans
         .filter(p => String(p.goalId) === goalId && p.month === currentMonth)
         .reduce((sum, p) => sum + p.plannedAmount, 0);
-
-      const depositedInMonth = month => goalDeposits
-        .filter(d => String(d.goalId) === goalId && d.month === month)
-        .reduce((sum, d) => sum + d.actualAmount, 0);
 
       const targetAmount = Number(goal.targetAmount) || 0;
       const currentAmount = depositedByGoal[goalId] || 0;
@@ -219,14 +232,22 @@ function getDepositPreview(requestedMonth) {
         targetAmount: targetAmount,
         currentAmount: currentAmount,
         remainingAmount: Math.max(targetAmount - currentAmount, 0),
+        monthEnd: normalizeMonth_(goal.monthEnd),
         plannedAmount: plannedAmount,
-        currentMonthDeposits: depositedInMonth(currentMonth),
-        previousMonthsDeposits: previousMonths.map(month => ({
-          month: month,
-          amount: depositedInMonth(month)
-        }))
+        currentMonthDeposits: depositedInMonth(goalId, currentMonth),
+        previousMonthsDeposits: previousMonthsDeposits(goalId)
       };
     });
+
+  return {
+    goals: goals,
+    cushion: {
+      goalId: CUSHION_GOAL_ID,
+      currentAmount: depositedByGoal[CUSHION_GOAL_ID] || 0,
+      currentMonthDeposits: depositedInMonth(CUSHION_GOAL_ID, currentMonth),
+      previousMonthsDeposits: previousMonthsDeposits(CUSHION_GOAL_ID)
+    }
+  };
 }
 
 // Итоги месяца: сколько нужно внести по плану и сколько уже внесено
@@ -257,6 +278,8 @@ function getDepositSummary(requestedMonth) {
 // =========================
 
 // data: { month, amount, allocations: [{ goalId, actualAmount }] }
+// Вся внесённая сумма должна быть распределена: на цели и/или в подушку безопасности.
+// Вносить больше остатка до цели можно (оверкап), решение о переносе лишнего принимает пользователь.
 function saveDeposit(data) {
   const month = getMonthKey_(data.month);
   const depositAmount = Number(data.amount);
@@ -283,15 +306,18 @@ function saveDeposit(data) {
   }
 
   const allocatedTotal = allocations.reduce((sum, a) => sum + a.actualAmount, 0);
-  if (allocatedTotal > depositAmount + MONEY_EPSILON) {
-    throw new Error("Сумма по целям (" + allocatedTotal + ") больше внесённой суммы (" + depositAmount + ")");
+  if (Math.abs(allocatedTotal - depositAmount) > MONEY_EPSILON) {
+    throw new Error("Сумма распределения (" + allocatedTotal + ") должна равняться внесённой сумме (" + depositAmount + ")");
   }
 
-  // Проверяем цели: существуют, активны, не превышаем остаток
+  // Цели должны существовать и быть активными (подушка существует всегда)
   const goals = readGoals_();
+  const goalDepositsBefore = readGoalDepositRows_();
   const depositedByGoal = sumDepositsByGoal_();
 
   allocations.forEach(a => {
+    if (String(a.goalId) === CUSHION_GOAL_ID) return;
+
     const goal = goals.filter(g => String(g.id) === String(a.goalId))[0];
 
     if (!goal) {
@@ -300,14 +326,9 @@ function saveDeposit(data) {
     if (!isGoalActive_(goal)) {
       throw new Error("Цель «" + goal.name + "» уже закрыта — вносить на неё нельзя");
     }
-
-    const remaining = Number(goal.targetAmount) - (depositedByGoal[String(goal.id)] || 0);
-    if (a.actualAmount > remaining + MONEY_EPSILON) {
-      throw new Error("Сумма по цели «" + goal.name + "» больше остатка до цели (" + remaining + ")");
-    }
   });
 
-  // Запись: общий взнос и распределение по целям
+  // Запись: общий взнос и распределение
   writeRows_(DEPOSITS_SHEET_NAME, [{ month: month, amount: depositAmount }]);
 
   writeRows_(GOAL_DEPOSITS_SHEET_NAME, allocations.map(a => ({
@@ -316,22 +337,69 @@ function saveDeposit(data) {
     actualAmount: a.actualAmount
   })));
 
-  // Закрываем цели, которые достигли целевой суммы
+  // Закрываем цели, достигшие целевой суммы, и пересчитываем будущий план остальных
   const completedGoalIds = [];
+  const replannedGoalIds = [];
   const goalsSheet = getSheet_(GOALS_SHEET_NAME);
   const goalsHeaders = getHeaderIndex_(goalsSheet, SHEET_HEADERS[GOALS_SHEET_NAME]);
+  const plans = readPlanRows_();
 
-  allocations.forEach(a => {
-    const goal = goals.filter(g => String(g.id) === String(a.goalId))[0];
-    const newTotal = (depositedByGoal[String(goal.id)] || 0) + a.actualAmount;
+  goals.filter(isGoalActive_).forEach(goal => {
+    const goalId = String(goal.id);
+    const allocated = allocations
+      .filter(a => String(a.goalId) === goalId)
+      .reduce((sum, a) => sum + a.actualAmount, 0);
 
-    if (newTotal >= Number(goal.targetAmount) - MONEY_EPSILON) {
+    const totalAfter = (depositedByGoal[goalId] || 0) + allocated;
+    const targetAmount = Number(goal.targetAmount) || 0;
+    const isCompleted = totalAfter >= targetAmount - MONEY_EPSILON;
+
+    if (isCompleted) {
       goalsSheet.getRange(goal._row, goalsHeaders.status + 1).setValue(GOAL_STATUS_COMPLETED);
       completedGoalIds.push(goal.id);
     }
+
+    // Отклонение от плана месяца: пересчитываем будущие месяцы, срок не меняется
+    const depositedThisMonth = goalDepositsBefore
+      .filter(d => String(d.goalId) === goalId && d.month === month)
+      .reduce((sum, d) => sum + d.actualAmount, 0) + allocated;
+
+    const plannedThisMonth = plans
+      .filter(p => String(p.goalId) === goalId && p.month === month)
+      .reduce((sum, p) => sum + p.plannedAmount, 0);
+
+    if (isCompleted || Math.abs(depositedThisMonth - plannedThisMonth) > MONEY_EPSILON) {
+      if (replanFutureMonths_(plans, goalId, month, Math.max(targetAmount - totalAfter, 0))) {
+        replannedGoalIds.push(goal.id);
+      }
+    }
   });
 
-  return { success: true, completedGoalIds: completedGoalIds };
+  return { success: true, completedGoalIds: completedGoalIds, replannedGoalIds: replannedGoalIds };
+}
+
+// Раскладывает остаток по цели поровну на месяцы плана после текущего.
+// Если остатка нет, будущие месяцы обнуляются. Возвращает true, если были будущие месяцы.
+function replanFutureMonths_(plans, goalId, currentMonth, remainingAmount) {
+  const futureRows = plans
+    .filter(p => String(p.goalId) === String(goalId) && p.month > currentMonth)
+    .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+
+  if (futureRows.length === 0) return false;
+
+  const planSheet = getSheet_(GOAL_PLAN_SHEET_NAME);
+  const planHeaders = getHeaderIndex_(planSheet, SHEET_HEADERS[GOAL_PLAN_SHEET_NAME]);
+
+  const base = Math.floor(remainingAmount / futureRows.length);
+  const extra = Math.round(remainingAmount - base * futureRows.length);
+
+  futureRows.forEach((row, i) => {
+    // Первые extra месяцев получают на рубль больше, чтобы сумма сошлась
+    const amount = remainingAmount > 0 ? base + (i < extra ? 1 : 0) : 0;
+    planSheet.getRange(row._row, planHeaders.plannedAmount + 1).setValue(amount);
+  });
+
+  return true;
 }
 
 // =========================
@@ -463,6 +531,7 @@ function readPlanRows_() {
   return readTable_(GOAL_PLAN_SHEET_NAME)
     .filter(row => String(row.goalId) !== "")
     .map(row => ({
+      _row: row._row,
       goalId: row.goalId,
       month: normalizeMonth_(row.month),
       plannedAmount: Number(row.plannedAmount) || 0
