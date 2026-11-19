@@ -5,3 +5,22 @@ body {
 .row-deposited td {
   background: #e6f4ff;
 }
+
+/* Модальные окна всегда помещаются в экран: шапка и кнопки на месте, прокручивается только содержимое */
+.fit-modal {
+  padding-bottom: 0 !important;
+  max-width: calc(100vw - 16px);
+}
+
+.fit-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+}
+
+.fit-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}

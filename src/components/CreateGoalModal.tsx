@@ -156,6 +156,8 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
       cancelText="Отмена"
       confirmLoading={saving}
       width={640}
+      centered
+      className="fit-modal"
       destroyOnClose
     >
       <Form form={form} layout="vertical" onValuesChange={handleValuesChange} requiredMark={false}>
@@ -199,7 +201,6 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
         size="small"
         rowKey="month"
         pagination={false}
-        scroll={{ y: 240 }}
         dataSource={plan}
         locale={{ emptyText: "Укажите сумму и срок или взнос" }}
         columns={[

@@ -179,6 +179,8 @@ export default function DepositModal({ open, onClose, onSaved }: Props) {
       confirmLoading={saving}
       okButtonProps={{ disabled: loading || goals.length === 0 }}
       width={880}
+      centered
+      className="fit-modal"
       destroyOnClose
     >
       {loadError && <Alert type="error" showIcon message={`Не удалось загрузить данные: ${loadError}`} />}
