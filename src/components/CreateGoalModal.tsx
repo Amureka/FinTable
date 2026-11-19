@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Alert, DatePicker, Form, Input, InputNumber, Modal, Table, Typography, message } from "antd";
+import { Alert, DatePicker, Form, Input, Modal, Table, Typography, message } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { callApi } from "../lib/api";
+import MoneyInput from "./MoneyInput";
 import { formatMoney, formatMonthLabel } from "../lib/format";
 import {
   MonthRef,
@@ -171,7 +172,7 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
           name="targetAmount"
           rules={[{ required: true, message: "Введите целевую сумму" }]}
         >
-          <InputNumber min={1} precision={0} style={{ width: "100%" }} addonAfter="₽" />
+          <MoneyInput min={1} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item label="Месяц окончания" name="endMonth">
@@ -185,7 +186,7 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
         </Form.Item>
 
         <Form.Item label="Сумма в месяц" name="monthlyAmount">
-          <InputNumber min={1} precision={0} style={{ width: "100%" }} addonAfter="₽" />
+          <MoneyInput min={1} style={{ width: "100%" }} />
         </Form.Item>
       </Form>
 

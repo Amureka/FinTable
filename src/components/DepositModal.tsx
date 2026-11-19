@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, InputNumber, Modal, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Modal, Space, Table, Tag, Typography, message } from "antd";
 import { callApi } from "../lib/api";
+import MoneyInput from "./MoneyInput";
 import { currentMonthKey, formatMoney, formatMonthLabel } from "../lib/format";
 import { DepositPreviewGoal, DepositSummary } from "../lib/types";
 
@@ -151,9 +152,8 @@ export default function DepositModal({ open, onClose, onSaved }: Props) {
 
         return (
           <Space direction="vertical" size={2} style={{ width: "100%" }}>
-            <InputNumber
+            <MoneyInput
               min={0}
-              precision={0}
               value={value}
               status={tooMuch ? "error" : undefined}
               style={{ width: "100%" }}
@@ -191,7 +191,7 @@ export default function DepositModal({ open, onClose, onSaved }: Props) {
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Space wrap align="center">
             <Typography.Text>Сумма внесения:</Typography.Text>
-            <InputNumber min={0} precision={0} value={amount} onChange={setAmount} addonAfter="₽" />
+            <MoneyInput min={0} value={amount} onChange={setAmount} />
             <Typography.Text type="secondary">
               по плану на месяц {formatMoney(summary?.totalPlanned)}, уже внесено {formatMoney(alreadyDeposited)}
             </Typography.Text>

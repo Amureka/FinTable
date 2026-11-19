@@ -11,7 +11,8 @@ export interface PlanItem {
   plannedAmount: number;
 }
 
-export const MAX_PLAN_MONTHS = 120;
+// 40 лет: хватает для ипотеки
+export const MAX_PLAN_MONTHS = 480;
 
 export type PlanResult =
   | {
@@ -49,7 +50,7 @@ function buildPlan(target: number, start: MonthRef, monthlyInput: number): PlanR
   if (months > MAX_PLAN_MONTHS) {
     return {
       ok: false,
-      error: `Срок получается больше ${MAX_PLAN_MONTHS} месяцев. Увеличьте сумму в месяц.`
+      error: `Срок получается больше 40 лет. Увеличьте сумму в месяц.`
     };
   }
 
@@ -86,7 +87,7 @@ export function planFromEndMonth(target: number, start: MonthRef, end: MonthRef)
   const months = monthsInclusive(start, end);
   if (months < 1) return { ok: false, error: "Месяц окончания не может быть раньше текущего" };
   if (months > MAX_PLAN_MONTHS) {
-    return { ok: false, error: `Срок не может быть больше ${MAX_PLAN_MONTHS} месяцев` };
+    return { ok: false, error: `Срок не может быть больше 40 лет` };
   }
 
   return buildPlan(target, start, Math.ceil(target / months));

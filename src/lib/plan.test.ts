@@ -85,3 +85,17 @@ test("срок больше потолка — ошибка, и это не по
   assert.ok(r2.ok);
   assert.equal(r2.months, MAX_PLAN_MONTHS);
 });
+
+test("ипотека на 30 лет и граница в 40 лет", () => {
+  const r = planFromEndMonth(6000000, start, { year: 2056, month: 10 });
+  assert.ok(r.ok);
+  assert.equal(r.months, 360);
+  assert.equal(r.plan.reduce((s, p) => s + p.plannedAmount, 0), 6000000);
+
+  const edge = planFromMonthly(480 * 1000, start, 1000);
+  assert.ok(edge.ok);
+  assert.equal(edge.months, 480);
+
+  assert.equal(planFromMonthly(481 * 1000, start, 1000).ok, false);
+  assert.equal(planFromEndMonth(6000000, start, { year: 2066, month: 12 }).ok, false);
+});
