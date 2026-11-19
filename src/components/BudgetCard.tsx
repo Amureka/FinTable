@@ -72,6 +72,14 @@ export default function BudgetCard({ configured, month, loading, onOpenSettings,
                 Доход
                 <Popover
                   trigger="click"
+                  overlayClassName="income-popover"
+                  afterOpenChange={opened => {
+                    // Фокус в поле и выделение текста, чтобы новая сумма заменяла старую
+                    if (!opened) return;
+                    const input = document.querySelector<HTMLInputElement>(".income-popover input");
+                    input?.focus();
+                    input?.select();
+                  }}
                   open={popoverOpen}
                   onOpenChange={open => {
                     setPopoverOpen(open);
@@ -83,7 +91,6 @@ export default function BudgetCard({ configured, month, loading, onOpenSettings,
                       <MoneyInput
                         min={0}
                         value={draft}
-                        autoFocus
                         onFocus={event => event.target.select()}
                         onChange={value => setDraft(value as number | null)}
                       />
