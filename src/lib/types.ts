@@ -8,6 +8,8 @@ export interface Goal {
   monthlyAmount: number;
   status: string;
   createdAt: string;
+  // через сколько месяцев цель повторяется; 0 — не повторяется
+  repeatMonths?: number;
 }
 
 export interface MonthAmount {

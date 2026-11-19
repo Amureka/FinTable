@@ -16,6 +16,8 @@ const DEPOSITS_SHEET_NAME = "Deposits";
 const BUDGET_SETTINGS_SHEET_NAME = "BudgetSettings";
 // Фактический доход, полученный в конкретном месяце
 const MONTH_INCOME_SHEET_NAME = "MonthIncome";
+// Переносы денег между целями и списания (потрачено)
+const TRANSFERS_SHEET_NAME = "Transfers";
 
 // Обязательные заголовки каждого листа (названия должны совпадать)
 const SHEET_HEADERS = {
@@ -27,14 +29,23 @@ const SHEET_HEADERS = {
   [GOAL_DEPOSITS_SHEET_NAME]: ["goalId", "month", "actualAmount"],
   [DEPOSITS_SHEET_NAME]: ["month", "amount"],
   [BUDGET_SETTINGS_SHEET_NAME]: ["effectiveFrom", "monthlyIncome", "baseExpenses"],
-  [MONTH_INCOME_SHEET_NAME]: ["month", "actualIncome"]
+  [MONTH_INCOME_SHEET_NAME]: ["month", "actualIncome"],
+  // type: "transfer" (toId заполнен) или "writeoff" (toId пустой)
+  [TRANSFERS_SHEET_NAME]: ["month", "fromId", "toId", "amount", "type"]
+};
+
+// Необязательные колонки: если их нет на листе, они добавляются автоматически
+const OPTIONAL_HEADERS = {
+  // repeatMonths — через сколько месяцев цель повторяется (страховка, налог); пусто — не повторяется
+  [GOALS_SHEET_NAME]: ["repeatMonths"]
 };
 
 // Эти листы создаются автоматически, если их нет в таблице
-const AUTO_CREATED_SHEETS = [BUDGET_SETTINGS_SHEET_NAME, MONTH_INCOME_SHEET_NAME];
+const AUTO_CREATED_SHEETS = [BUDGET_SETTINGS_SHEET_NAME, MONTH_INCOME_SHEET_NAME, TRANSFERS_SHEET_NAME];
 
 const GOAL_STATUS_ACTIVE = "Активна";
 const GOAL_STATUS_COMPLETED = "Выполнена";
+const GOAL_STATUS_DELETED = "Удалена";
 // Какие значения в колонке status считаются «активна»
 const ACTIVE_STATUS_VALUES = ["Активна", "active"];
 
@@ -101,7 +112,16 @@ function runAction_(action, data) {
       return getDepositSummary(data.month);
 
     case "getCushion":
-      return { amount: sumDepositsByGoal_()[CUSHION_GOAL_ID] || 0 };
+      return { amount: sumBalanceByGoal_()[CUSHION_GOAL_ID] || 0 };
+
+    case "updateGoal":
+      return withLock_(() => updateGoal(data));
+
+    case "deleteGoal":
+      return withLock_(() => deleteGoal(data));
+
+    case "transferMoney":
+      return withLock_(() => transferMoney(data));
 
     case "saveDeposit":
       return withLock_(() => saveDeposit(data));
@@ -125,8 +145,8 @@ function runAction_(action, data) {
 // =========================
 
 function getGoals() {
-  const goals = readGoals_();
-  const depositedByGoal = sumDepositsByGoal_();
+  const goals = readGoals_().filter(goal => String(goal.status).trim() !== GOAL_STATUS_DELETED);
+  const depositedByGoal = sumBalanceByGoal_();
 
   return goals.map(goal => ({
     id: goal.id,
@@ -138,7 +158,8 @@ function getGoals() {
     monthEnd: normalizeMonth_(goal.monthEnd),
     monthlyAmount: Number(goal.monthlyAmount) || 0,
     status: goal.status,
-    createdAt: goal.createdAt
+    createdAt: goal.createdAt,
+    repeatMonths: Number(goal.repeatMonths) || 0
   }));
 }
 
@@ -158,8 +179,12 @@ function createGoal(data) {
 
   const goalId = new Date().getTime();
 
-  // currentAmount не записываем: колонка может считаться формулой таблицы
-  writeRows_(GOALS_SHEET_NAME, [{
+  const repeatMonths = Number(data.repeatMonths) || 0;
+  if (repeatMonths < 0 || repeatMonths > 120 || repeatMonths !== Math.floor(repeatMonths)) {
+    throw new Error("Период повтора должен быть целым числом месяцев от 1 до 120");
+  }
+
+  const goalRow = {
     id: goalId,
     name: name,
     targetAmount: targetAmount,
@@ -168,7 +193,11 @@ function createGoal(data) {
     monthlyAmount: data.monthlyAmount,
     status: GOAL_STATUS_ACTIVE,
     createdAt: data.createdAt
-  }]);
+  };
+  if (repeatMonths > 0) goalRow.repeatMonths = repeatMonths;
+
+  // currentAmount не записываем: колонка может считаться формулой таблицы
+  writeRows_(GOALS_SHEET_NAME, [goalRow]);
 
   writeRows_(GOAL_PLAN_SHEET_NAME, data.plan.map(planItem => ({
     goalId: goalId,
@@ -203,7 +232,7 @@ function getDepositPreview(requestedMonth) {
 
   const plans = readPlanRows_();
   const goalDeposits = readGoalDepositRows_();
-  const depositedByGoal = sumDepositsByGoal_();
+  const depositedByGoal = sumBalanceByGoal_();
 
   const depositedInMonth = (goalId, month) => goalDeposits
     .filter(d => String(d.goalId) === String(goalId) && d.month === month)
@@ -313,7 +342,7 @@ function saveDeposit(data) {
   // Цели должны существовать и быть активными (подушка существует всегда)
   const goals = readGoals_();
   const goalDepositsBefore = readGoalDepositRows_();
-  const depositedByGoal = sumDepositsByGoal_();
+  const depositedByGoal = sumBalanceByGoal_();
 
   allocations.forEach(a => {
     if (String(a.goalId) === CUSHION_GOAL_ID) return;
@@ -340,8 +369,6 @@ function saveDeposit(data) {
   // Закрываем цели, достигшие целевой суммы, и пересчитываем будущий план остальных
   const completedGoalIds = [];
   const replannedGoalIds = [];
-  const goalsSheet = getSheet_(GOALS_SHEET_NAME);
-  const goalsHeaders = getHeaderIndex_(goalsSheet, SHEET_HEADERS[GOALS_SHEET_NAME]);
   const plans = readPlanRows_();
 
   goals.filter(isGoalActive_).forEach(goal => {
@@ -355,7 +382,7 @@ function saveDeposit(data) {
     const isCompleted = totalAfter >= targetAmount - MONEY_EPSILON;
 
     if (isCompleted) {
-      goalsSheet.getRange(goal._row, goalsHeaders.status + 1).setValue(GOAL_STATUS_COMPLETED);
+      completeGoal_(goal, month);
       completedGoalIds.push(goal.id);
     }
 
@@ -400,6 +427,199 @@ function replanFutureMonths_(plans, goalId, currentMonth, remainingAmount) {
   });
 
   return true;
+}
+
+// =========================
+// Управление целями: изменение, удаление, переносы, повтор
+// =========================
+
+function findGoalById_(goalId) {
+  return readGoals_().filter(g => String(g.id) === String(goalId))[0];
+}
+
+function setGoalFields_(goal, fields) {
+  const sheet = getSheet_(GOALS_SHEET_NAME);
+  const headers = getHeaderIndex_(sheet, SHEET_HEADERS[GOALS_SHEET_NAME]);
+  Object.keys(fields).forEach(title => {
+    if (headers[title] !== undefined) {
+      sheet.getRange(goal._row, headers[title] + 1).setValue(fields[title]);
+    }
+  });
+}
+
+// Закрывает цель; у повторяющейся цели сразу создаёт следующий цикл
+function completeGoal_(goal, month) {
+  setGoalFields_(goal, { status: GOAL_STATUS_COMPLETED });
+
+  const repeatMonths = Number(goal.repeatMonths) || 0;
+  if (repeatMonths > 0) spawnNextCycle_(goal, month, repeatMonths);
+}
+
+function spawnNextCycle_(goal, month, repeatMonths) {
+  const start = shiftMonth_(month, 1);
+  let end = shiftMonth_(normalizeMonth_(goal.monthEnd), repeatMonths);
+  if (end < start) end = shiftMonth_(start, repeatMonths - 1);
+
+  const target = Number(goal.targetAmount);
+  const months = [];
+  for (let m = start; m <= end; m = shiftMonth_(m, 1)) months.push(m);
+
+  const base = Math.floor(target / months.length);
+  const extra = Math.round(target - base * months.length);
+  const plan = months.map((m, i) => ({ month: m, plannedAmount: base + (i < extra ? 1 : 0) }));
+
+  createGoal({
+    name: goal.name,
+    targetAmount: target,
+    monthStart: start,
+    monthEnd: end,
+    monthlyAmount: plan[0].plannedAmount,
+    createdAt: month + "-01",
+    repeatMonths: repeatMonths,
+    plan: plan
+  });
+}
+
+// Раскладывает остаток цели поровну на месяцы, начиная с текущего.
+// В строке текущего месяца уже внесённое сохраняется (план = внесено + доля).
+function replanFromCurrentMonth_(goal, month, remaining) {
+  const goalId = String(goal.id);
+  const plans = readPlanRows_();
+  const rows = plans
+    .filter(p => String(p.goalId) === goalId && p.month >= month)
+    .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+
+  if (rows.length === 0) {
+    writeRows_(GOAL_PLAN_SHEET_NAME, [{ goalId: goal.id, month: month, plannedAmount: remaining }]);
+    setGoalFields_(goal, { monthEnd: month, monthlyAmount: remaining });
+    return;
+  }
+
+  const depositedNow = readGoalDepositRows_()
+    .filter(d => String(d.goalId) === goalId && d.month === month)
+    .reduce((sum, d) => sum + d.actualAmount, 0);
+
+  const sheet = getSheet_(GOAL_PLAN_SHEET_NAME);
+  const headers = getHeaderIndex_(sheet, SHEET_HEADERS[GOAL_PLAN_SHEET_NAME]);
+  const base = Math.floor(remaining / rows.length);
+  const extra = Math.round(remaining - base * rows.length);
+
+  let firstShare = 0;
+  rows.forEach((row, i) => {
+    const share = base + (i < extra ? 1 : 0);
+    if (i === 0) firstShare = share;
+    const value = row.month === month ? share + depositedNow : share;
+    sheet.getRange(row._row, headers.plannedAmount + 1).setValue(value);
+  });
+
+  setGoalFields_(goal, { monthEnd: rows[rows.length - 1].month, monthlyAmount: firstShare });
+}
+
+// После изменения баланса: закрыть цель, если хватает, иначе пересчитать план
+function afterBalanceChange_(goalId, month) {
+  if (String(goalId) === CUSHION_GOAL_ID) return;
+
+  const goal = findGoalById_(goalId);
+  if (!goal || !isGoalActive_(goal)) return;
+
+  const balance = sumBalanceByGoal_()[String(goal.id)] || 0;
+  const target = Number(goal.targetAmount) || 0;
+
+  if (balance >= target - MONEY_EPSILON) {
+    completeGoal_(goal, month);
+    replanFutureMonths_(readPlanRows_(), goal.id, month, 0);
+  } else {
+    replanFromCurrentMonth_(goal, month, target - balance);
+  }
+}
+
+function updateGoal(data) {
+  const goal = findGoalById_(data.id);
+  if (!goal || String(goal.status).trim() === GOAL_STATUS_DELETED) throw new Error("Цель не найдена");
+  if (!isGoalActive_(goal)) throw new Error("Закрытую цель изменить нельзя");
+
+  const name = String(data.name || "").trim();
+  const target = Number(data.targetAmount);
+  if (!name) throw new Error("Укажите название цели");
+  if (!isFinite(target) || target <= 0) throw new Error("Целевая сумма должна быть больше нуля");
+
+  setGoalFields_(goal, { name: name, targetAmount: target });
+  goal.targetAmount = target;
+  goal.name = name;
+
+  afterBalanceChange_(goal.id, getMonthKey_(data.month));
+  return { success: true };
+}
+
+function deleteGoal(data) {
+  const goal = findGoalById_(data.id);
+  if (!goal || String(goal.status).trim() === GOAL_STATUS_DELETED) throw new Error("Цель не найдена");
+
+  const month = getMonthKey_(data.month);
+  const balance = sumBalanceByGoal_()[String(goal.id)] || 0;
+
+  if (balance > MONEY_EPSILON) {
+    const toId = String(data.moveToId || "");
+    if (!toId) throw new Error("Укажите, куда перенести накопленные деньги");
+    if (toId === String(goal.id)) throw new Error("Нельзя перенести деньги на удаляемую цель");
+
+    if (toId !== CUSHION_GOAL_ID) {
+      const target = findGoalById_(toId);
+      if (!target || !isGoalActive_(target)) throw new Error("Цель для переноса не найдена или уже закрыта");
+    }
+
+    writeRows_(TRANSFERS_SHEET_NAME, [{ month: month, fromId: goal.id, toId: toId, amount: balance, type: "transfer" }]);
+    setGoalFields_(goal, { status: GOAL_STATUS_DELETED });
+    afterBalanceChange_(toId, month);
+  } else {
+    setGoalFields_(goal, { status: GOAL_STATUS_DELETED });
+  }
+
+  return { success: true };
+}
+
+function transferMoney(data) {
+  const month = getMonthKey_(data.month);
+  const type = String(data.type);
+  const amount = Number(data.amount);
+  const fromId = String(data.fromId || "");
+  const toId = String(data.toId || "");
+
+  if (type !== "transfer" && type !== "writeoff") throw new Error("Неизвестный тип операции");
+  if (!isFinite(amount) || amount <= 0) throw new Error("Сумма должна быть больше нуля");
+  if (!fromId) throw new Error("Не указан источник");
+
+  const balances = sumBalanceByGoal_();
+
+  if (fromId !== CUSHION_GOAL_ID) {
+    const from = findGoalById_(fromId);
+    if (!from || String(from.status).trim() === GOAL_STATUS_DELETED) throw new Error("Цель-источник не найдена");
+  }
+  if ((balances[fromId] || 0) < amount - MONEY_EPSILON) {
+    throw new Error("Недостаточно денег: доступно " + (balances[fromId] || 0));
+  }
+
+  if (type === "transfer") {
+    if (!toId) throw new Error("Не указано, куда переносить");
+    if (toId === fromId) throw new Error("Источник и получатель совпадают");
+    if (toId !== CUSHION_GOAL_ID) {
+      const to = findGoalById_(toId);
+      if (!to || !isGoalActive_(to)) throw new Error("Цель-получатель не найдена или уже закрыта");
+    }
+  }
+
+  writeRows_(TRANSFERS_SHEET_NAME, [{
+    month: month,
+    fromId: fromId,
+    toId: type === "transfer" ? toId : "",
+    amount: amount,
+    type: type
+  }]);
+
+  afterBalanceChange_(fromId, month);
+  if (type === "transfer") afterBalanceChange_(toId, month);
+
+  return { success: true };
 }
 
 // =========================
@@ -557,13 +777,32 @@ function readDepositRows_() {
     }));
 }
 
-// { "<goalId>": сумма всех взносов по цели }
-function sumDepositsByGoal_() {
+function readTransferRows_() {
+  return readTable_(TRANSFERS_SHEET_NAME)
+    .filter(row => String(row.fromId) !== "")
+    .map(row => ({
+      month: normalizeMonth_(row.month),
+      fromId: String(row.fromId),
+      toId: String(row.toId),
+      amount: Number(row.amount) || 0,
+      type: String(row.type)
+    }));
+}
+
+// { "<goalId>": накопленное по цели } = взносы + входящие переносы − исходящие переносы − списания
+function sumBalanceByGoal_() {
   const totals = {};
 
   readGoalDepositRows_().forEach(row => {
     const key = String(row.goalId);
     totals[key] = (totals[key] || 0) + row.actualAmount;
+  });
+
+  readTransferRows_().forEach(row => {
+    totals[row.fromId] = (totals[row.fromId] || 0) - row.amount;
+    if (row.type === "transfer" && row.toId !== "") {
+      totals[row.toId] = (totals[row.toId] || 0) + row.amount;
+    }
   });
 
   return totals;
@@ -619,9 +858,27 @@ function getHeaderIndex_(sheet, requiredHeaders) {
   return headerIndex;
 }
 
+// Добавляет в конец строки заголовков необязательные колонки, которых ещё нет
+function ensureOptionalColumns_(sheet, sheetName) {
+  const optional = OPTIONAL_HEADERS[sheetName];
+  if (!optional) return;
+
+  const lastColumn = sheet.getLastColumn();
+  const existing = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(title => String(title).trim());
+
+  let nextColumn = lastColumn + 1;
+  optional.forEach(title => {
+    if (existing.indexOf(title) === -1) {
+      sheet.getRange(1, nextColumn).setValue(title);
+      nextColumn++;
+    }
+  });
+}
+
 // Читает лист в массив объектов { заголовок: значение, _row: номер строки }
 function readTable_(sheetName) {
   const sheet = getSheet_(sheetName);
+  ensureOptionalColumns_(sheet, sheetName);
   const headerIndex = getHeaderIndex_(sheet, SHEET_HEADERS[sheetName]);
   const lastRow = sheet.getLastRow();
 
@@ -655,6 +912,7 @@ function writeRows_(sheetName, rows) {
   if (rows.length === 0) return;
 
   const sheet = getSheet_(sheetName);
+  ensureOptionalColumns_(sheet, sheetName);
   const headerIndex = getHeaderIndex_(sheet, SHEET_HEADERS[sheetName]);
   const firstRow = findFirstEmptyRow_(sheet);
   const lastNeededRow = firstRow + rows.length - 1;

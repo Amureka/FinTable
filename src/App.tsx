@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, ConfigProvider, Layout, Popconfirm, Space, Typography, message } from "antd";
 import ruRU from "antd/locale/ru_RU";
-import { PlusOutlined, WalletOutlined } from "@ant-design/icons";
+import { PlusOutlined, SwapOutlined, WalletOutlined } from "@ant-design/icons";
 import CreateGoalModal from "./components/CreateGoalModal";
 import DepositModal from "./components/DepositModal";
 import GoalsDashboard from "./components/GoalsDashboard";
+import { DeleteGoalModal, EditGoalModal, TransferModal } from "./components/GoalActionModals";
 import BudgetCard from "./components/BudgetCard";
 import BudgetSettingsModal from "./components/BudgetSettingsModal";
 import { USE_MOCK, callApi, resetMockData } from "./lib/api";
@@ -19,6 +20,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cushionAmount, setCushionAmount] = useState(0);
   const [budget, setBudget] = useState<BudgetOverview | null>(null);
+  const [editGoal, setEditGoal] = useState<Goal | null>(null);
+  const [deleteGoal, setDeleteGoal] = useState<Goal | null>(null);
+  const [transferFrom, setTransferFrom] = useState<string | null>(null);
   const [budgetRevision, setBudgetRevision] = useState(0);
 
   const loadGoals = useCallback(async () => {
@@ -77,6 +81,9 @@ export default function App() {
             <Button type="primary" icon={<WalletOutlined />} onClick={() => setDepositOpen(true)}>
               Внести деньги
             </Button>
+            <Button icon={<SwapOutlined />} onClick={() => setTransferFrom("cushion")}>
+              Перенести / списать
+            </Button>
             <Button icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
               Создать цель
             </Button>
@@ -106,7 +113,11 @@ export default function App() {
             onChanged={reloadAll}
           />
 
-          <GoalsDashboard goals={goals} cushionAmount={cushionAmount} loading={loading} onCreateGoal={() => setCreateOpen(true)} />
+          <GoalsDashboard goals={goals} cushionAmount={cushionAmount} loading={loading} onCreateGoal={() => setCreateOpen(true)}
+            onEdit={setEditGoal}
+            onDelete={setDeleteGoal}
+            onTransfer={setTransferFrom}
+          />
         </Layout.Content>
       </Layout>
 
@@ -116,6 +127,16 @@ export default function App() {
         onCreated={reloadAll}
         onOpenBudgetSettings={() => setSettingsOpen(true)}
         budgetRevision={budgetRevision}
+      />
+      <EditGoalModal goal={editGoal} onClose={() => setEditGoal(null)} onDone={reloadAll} />
+      <DeleteGoalModal goal={deleteGoal} goals={goals} onClose={() => setDeleteGoal(null)} onDone={reloadAll} />
+      <TransferModal
+        open={transferFrom !== null}
+        goals={goals}
+        cushionAmount={cushionAmount}
+        initialFromId={transferFrom ?? undefined}
+        onClose={() => setTransferFrom(null)}
+        onDone={reloadAll}
       />
       <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} onSaved={reloadAll} />
       <BudgetSettingsModal

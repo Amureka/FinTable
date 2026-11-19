@@ -1,4 +1,5 @@
-import { Button, Card, Col, Empty, Progress, Row, Statistic, Tag, Typography } from "antd";
+import { Button, Card, Col, Dropdown, Empty, Progress, Row, Statistic, Tag, Typography } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import { formatMoney, formatMonthLabel } from "../lib/format";
 import { Goal, STATUS_COMPLETED } from "../lib/types";
 
@@ -7,9 +8,12 @@ interface Props {
   cushionAmount: number;
   loading: boolean;
   onCreateGoal: () => void;
+  onEdit: (goal: Goal) => void;
+  onDelete: (goal: Goal) => void;
+  onTransfer: (fromId: string) => void;
 }
 
-export default function GoalsDashboard({ goals, cushionAmount, loading, onCreateGoal }: Props) {
+export default function GoalsDashboard({ goals, cushionAmount, loading, onCreateGoal, onEdit, onDelete, onTransfer }: Props) {
   const savedTotal = goals.reduce((sum, goal) => sum + goal.currentAmount, 0) + cushionAmount;
 
   return (
@@ -23,6 +27,9 @@ export default function GoalsDashboard({ goals, cushionAmount, loading, onCreate
         <Col xs={24} md={12}>
           <Card loading={loading} style={{ height: "100%" }}>
             <Statistic title="Подушка безопасности" value={cushionAmount} suffix="₽" groupSeparator=" " />
+            <Button size="small" style={{ float: "right" }} disabled={cushionAmount <= 0} onClick={() => onTransfer("cushion")}>
+              Перенести / списать
+            </Button>
             <Typography.Text type="secondary">Резерв без срока: сюда попадает остаток, когда все цели профинансированы.</Typography.Text>
           </Card>
         </Col>
@@ -39,7 +46,7 @@ export default function GoalsDashboard({ goals, cushionAmount, loading, onCreate
       ) : (
         <Row gutter={[16, 16]}>
           {goals.map(goal => {
-            const percent = goal.targetAmount > 0 ? Math.min(Math.round((goal.currentAmount / goal.targetAmount) * 100), 100) : 0;
+            const percent = goal.status === STATUS_COMPLETED ? 100 : goal.targetAmount > 0 ? Math.min(Math.round((goal.currentAmount / goal.targetAmount) * 100), 100) : 0;
             const completed = goal.status === STATUS_COMPLETED;
 
             return (
@@ -47,7 +54,29 @@ export default function GoalsDashboard({ goals, cushionAmount, loading, onCreate
                 <Card
                   title={goal.name}
                   loading={loading}
-                  extra={completed ? <Tag color="success">Выполнена</Tag> : <Tag color="processing">Активна</Tag>}
+                  extra={
+                    <>
+                      {completed ? <Tag color="success">Выполнена</Tag> : <Tag color="processing">Активна</Tag>}
+                      {goal.repeatMonths ? <Tag>повтор: {goal.repeatMonths} мес.</Tag> : null}
+                      <Dropdown
+                        trigger={["click"]}
+                        menu={{
+                          items: [
+                            { key: "edit", label: "Изменить", disabled: completed },
+                            { key: "transfer", label: "Перенести / списать", disabled: goal.currentAmount <= 0 },
+                            { key: "delete", label: "Удалить", danger: true }
+                          ],
+                          onClick: ({ key }) => {
+                            if (key === "edit") onEdit(goal);
+                            if (key === "transfer") onTransfer(String(goal.id));
+                            if (key === "delete") onDelete(goal);
+                          }
+                        }}
+                      >
+                        <Button type="text" icon={<MoreOutlined />} aria-label="Действия с целью" />
+                      </Dropdown>
+                    </>
+                  }
                 >
                   <Progress percent={percent} status={completed ? "success" : "active"} />
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Table, Typography, message } from "antd";
+import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Table, Typography, message } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { callApi } from "../lib/api";
 import MoneyInput from "./MoneyInput";
@@ -19,6 +19,7 @@ interface FormValues {
   targetAmount?: number | null;
   endMonth?: Dayjs | null;
   monthlyAmount?: number | null;
+  repeatMonths?: number;
 }
 
 interface Props {
@@ -162,6 +163,7 @@ export default function CreateGoalModal({ open, onClose, onCreated, onOpenBudget
         monthEnd: plan[plan.length - 1].month,
         monthlyAmount: values.monthlyAmount,
         createdAt: dayjs().format("YYYY-MM-DD"),
+        repeatMonths: values.repeatMonths || undefined,
         plan
       });
 
@@ -261,6 +263,17 @@ export default function CreateGoalModal({ open, onClose, onCreated, onOpenBudget
             </Form.Item>
           </Col>
         </Row>
+        <Form.Item label="Повтор цели" name="repeatMonths" initialValue={0}>
+          <Select
+            options={[
+              { value: 0, label: "Не повторять" },
+              { value: 1, label: "Каждый месяц" },
+              { value: 3, label: "Раз в 3 месяца" },
+              { value: 6, label: "Раз в 6 месяцев" },
+              { value: 12, label: "Раз в год" }
+            ]}
+          />
+        </Form.Item>
       </Form>
 
       {budget && !configured && (
