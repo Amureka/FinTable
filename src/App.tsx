@@ -6,6 +6,7 @@ import CreateGoalModal from "./components/CreateGoalModal";
 import DepositModal from "./components/DepositModal";
 import GoalsDashboard from "./components/GoalsDashboard";
 import { DeleteGoalModal, EditGoalModal, TransferModal } from "./components/GoalActionModals";
+import MonthTable from "./components/MonthTable";
 import BudgetCard from "./components/BudgetCard";
 import BudgetSettingsModal from "./components/BudgetSettingsModal";
 import { USE_MOCK, callApi, resetMockData } from "./lib/api";
@@ -118,6 +119,8 @@ export default function App() {
             onDelete={setDeleteGoal}
             onTransfer={setTransferFrom}
           />
+
+          <MonthTable revision={budgetRevision} />
         </Layout.Content>
       </Layout>
 

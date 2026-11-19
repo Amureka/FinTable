@@ -129,6 +129,9 @@ function runAction_(action, data) {
     case "getBudgetOverview":
       return getBudgetOverview(data.months);
 
+    case "getMonthTable":
+      return getMonthTable();
+
     case "saveBudgetSettings":
       return withLock_(() => saveBudgetSettings(data));
 
@@ -681,6 +684,54 @@ function getBudgetOverview(requestedMonths) {
         free: income === null ? null : income - baseExpenses - planned
       };
     })
+  };
+}
+
+// Таблица «месяц × цель»: план и внесённое по каждой цели и подушке, доход, отметка «все цели выполнены».
+// Месяцы: от самого раннего в плане/взносах до самого позднего месяца плана.
+function getMonthTable() {
+  const goals = readGoals_().filter(g => String(g.status).trim() !== GOAL_STATUS_DELETED);
+  const plans = readPlanRows_().filter(p => goals.some(g => String(g.id) === String(p.goalId)));
+  const deposits = readGoalDepositRows_();
+  const current = getMonthKey_();
+
+  const all = plans.map(p => p.month).concat(deposits.map(d => d.month)).concat([current]);
+  all.sort();
+  const first = all[0];
+  const last = all[all.length - 1];
+  const months = [];
+  for (let m = first; m <= last && months.length < 600; m = shiftMonth_(m, 1)) months.push(m);
+
+  const budget = getBudgetOverview(months).months;
+  const sum = (rows, key) => rows.reduce((t, r) => t + r[key], 0);
+
+  const rows = months.map((month, i) => {
+    const cells = goals.map(g => {
+      const id = String(g.id);
+      return {
+        goalId: g.id,
+        planned: sum(plans.filter(p => String(p.goalId) === id && p.month === month), "plannedAmount"),
+        deposited: sum(deposits.filter(d => String(d.goalId) === id && d.month === month), "actualAmount")
+      };
+    });
+    const cushion = sum(deposits.filter(d => String(d.goalId) === CUSHION_GOAL_ID && d.month === month), "actualAmount");
+    const withPlan = cells.filter(c => c.planned > 0);
+
+    return {
+      month: month,
+      income: budget[i].income,
+      cells: cells,
+      cushion: cushion,
+      totalDeposited: sum(cells, "deposited") + cushion,
+      // все цели с планом в этом месяце получили не меньше плана
+      allDone: withPlan.length > 0 && withPlan.every(c => c.deposited >= c.planned - MONEY_EPSILON)
+    };
+  });
+
+  return {
+    goals: goals.map(g => ({ id: g.id, name: g.name, status: g.status })),
+    months: rows,
+    currentMonth: current
   };
 }
 
