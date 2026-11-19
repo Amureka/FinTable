@@ -24,3 +24,40 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
 }
+
+/* Окно создания цели: форма сверху остаётся на месте, прокручивается только таблица плана */
+.fit-modal-table .ant-modal-body {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* запасной вариант для совсем низких экранов */
+}
+
+.compact-form .ant-form-item {
+  margin-bottom: 8px;
+}
+
+.compact-form .ant-form-item-label {
+  padding-bottom: 2px;
+}
+
+.plan-table-wrap {
+  flex: 1 1 auto;
+  min-height: 100px;
+  overflow: auto;
+  margin: 6px 0 8px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.plan-table-wrap .ant-table-thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* На телефонах убираем расшифровку в подсказке, чтобы форма занимала меньше места */
+@media (max-width: 575px) {
+  .hide-xs {
+    display: none;
+  }
+}

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Alert, DatePicker, Form, Input, Modal, Table, Typography, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Table, Typography, message } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { callApi } from "../lib/api";
 import MoneyInput from "./MoneyInput";
-import { formatMoney, formatMonthLabel } from "../lib/format";
+import { currentMonthKey, formatMoney, formatMonthLabel } from "../lib/format";
+import { BudgetOverview } from "../lib/types";
 import {
   MonthRef,
   PlanItem,
@@ -24,6 +25,9 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  onOpenBudgetSettings: () => void;
+  // меняется после сохранения настроек бюджета — тогда данные о свободных деньгах загружаются заново
+  budgetRevision: number;
 }
 
 function currentMonthRef(): MonthRef {
@@ -35,12 +39,39 @@ function toMonthRef(date: Dayjs): MonthRef {
   return { year: date.year(), month: date.month() + 1 };
 }
 
-export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
+export default function CreateGoalModal({ open, onClose, onCreated, onOpenBudgetSettings, budgetRevision }: Props) {
   const [form] = Form.useForm<FormValues>();
   const [plan, setPlan] = useState<PlanItem[]>([]);
   const [planError, setPlanError] = useState<string | null>(null);
   const [planNote, setPlanNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [budget, setBudget] = useState<BudgetOverview | null>(null);
+
+  // Свободные деньги по месяцам плана (или только за текущий месяц, пока плана нет)
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    const months = plan.length > 0 ? plan.map(item => item.month) : [currentMonthKey()];
+
+    callApi<BudgetOverview>("getBudgetOverview", { months })
+      .then(result => {
+        if (!cancelled) setBudget(result);
+      })
+      .catch(() => {
+        if (!cancelled) setBudget(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, plan, budgetRevision]);
+
+  const freeByMonth = useMemo(() => {
+    const map = new Map<string, number | null>();
+    budget?.months.forEach(item => map.set(item.month, item.free));
+    return map;
+  }, [budget]);
 
   function applyResult(result: PlanResult) {
     if (!result.ok) {
@@ -146,6 +177,36 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
 
   const total = plan.reduce((sum, item) => sum + item.plannedAmount, 0);
 
+  const configured = budget?.configured === true;
+  const thisMonth = budget?.months[0];
+  const monthsOverBudget = plan.filter(item => {
+    const free = freeByMonth.get(item.month);
+    return free !== null && free !== undefined && free - item.plannedAmount < 0;
+  }).length;
+
+  const firstPlanned = plan[0]?.plannedAmount ?? 0;
+  const freeAfterFirst = thisMonth && thisMonth.free !== null ? thisMonth.free - firstPlanned : null;
+
+  const columns = [
+    { title: "Месяц", dataIndex: "month", render: (value: string) => formatMonthLabel(value) },
+    { title: "Сумма", dataIndex: "plannedAmount", align: "right" as const, render: (value: number) => formatMoney(value) },
+    ...(configured
+      ? [
+          {
+            title: "Останется свободно",
+            key: "freeAfter",
+            align: "right" as const,
+            render: (_: unknown, item: PlanItem) => {
+              const free = freeByMonth.get(item.month);
+              if (free === null || free === undefined) return "—";
+              const rest = free - item.plannedAmount;
+              return <Typography.Text type={rest < 0 ? "danger" : undefined}>{formatMoney(rest)}</Typography.Text>;
+            }
+          }
+        ]
+      : [])
+  ];
+
   return (
     <Modal
       title="Создать цель"
@@ -157,69 +218,117 @@ export default function CreateGoalModal({ open, onClose, onCreated }: Props) {
       confirmLoading={saving}
       width={640}
       centered
-      className="fit-modal"
+      className="fit-modal fit-modal-table"
       destroyOnClose
     >
-      <Form form={form} layout="vertical" onValuesChange={handleValuesChange} requiredMark={false}>
-        <Form.Item
-          label="Название цели"
-          name="name"
-          rules={[{ required: true, whitespace: true, message: "Введите название цели" }]}
-        >
-          <Input maxLength={80} placeholder="Например, ноутбук" />
-        </Form.Item>
+      <Form form={form} layout="vertical" onValuesChange={handleValuesChange} requiredMark={false} className="compact-form">
+        <Row gutter={12}>
+          <Col xs={24} sm={14}>
+            <Form.Item
+              label="Название цели"
+              name="name"
+              rules={[{ required: true, whitespace: true, message: "Введите название цели" }]}
+            >
+              <Input maxLength={80} placeholder="Например, ноутбук" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={10}>
+            <Form.Item
+              label="Целевая сумма"
+              name="targetAmount"
+              rules={[{ required: true, message: "Введите целевую сумму" }]}
+            >
+              <MoneyInput min={1} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Form.Item
-          label="Целевая сумма"
-          name="targetAmount"
-          rules={[{ required: true, message: "Введите целевую сумму" }]}
-        >
-          <MoneyInput min={1} style={{ width: "100%" }} />
-        </Form.Item>
-
-        <Form.Item label="Месяц окончания" name="endMonth">
-          <DatePicker
-            picker="month"
-            format="MMMM YYYY"
-            style={{ width: "100%" }}
-            placeholder="Выберите месяц"
-            disabledDate={date => date.isBefore(dayjs().startOf("month"))}
-          />
-        </Form.Item>
-
-        <Form.Item label="Сумма в месяц" name="monthlyAmount">
-          <MoneyInput min={1} style={{ width: "100%" }} />
-        </Form.Item>
+        <Row gutter={12}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Месяц окончания" name="endMonth">
+              <DatePicker
+                picker="month"
+                format="MMMM YYYY"
+                style={{ width: "100%" }}
+                placeholder="Выберите месяц"
+                disabledDate={date => date.isBefore(dayjs().startOf("month"))}
+              />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Сумма в месяц" name="monthlyAmount">
+              <MoneyInput min={1} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
       </Form>
 
-      <Typography.Title level={5}>План накоплений</Typography.Title>
+      {budget && !configured && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message="Укажите доход, чтобы видеть, сколько денег можно распределить."
+          action={
+            <Button size="small" onClick={onOpenBudgetSettings}>
+              Указать доход
+            </Button>
+          }
+        />
+      )}
 
-      {planError && <Alert type="error" message={planError} showIcon style={{ marginBottom: 12 }} />}
-      {planNote && <Alert type="info" message={planNote} showIcon style={{ marginBottom: 12 }} />}
+      {configured && thisMonth && thisMonth.free !== null && (
+        <Alert
+          type={freeAfterFirst !== null && freeAfterFirst < 0 ? "warning" : "success"}
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={
+            <>
+              Свободно в этом месяце: <b>{formatMoney(thisMonth.free)}</b>
+              {" "}
+              <Typography.Text type="secondary" className="hide-xs">
+                (доход {formatMoney(thisMonth.income)} − расходы {formatMoney(thisMonth.baseExpenses)} − уже запланировано {formatMoney(thisMonth.planned)})
+              </Typography.Text>
+              {plan.length > 0 && freeAfterFirst !== null && (
+                <>
+                  {" "}После этой цели останется: <b>{formatMoney(freeAfterFirst)}</b>
+                </>
+              )}
+            </>
+          }
+        />
+      )}
 
-      <Table<PlanItem>
-        size="small"
-        rowKey="month"
-        pagination={false}
-        dataSource={plan}
-        locale={{ emptyText: "Укажите сумму и срок или взнос" }}
-        columns={[
-          { title: "Месяц", dataIndex: "month", render: (value: string) => formatMonthLabel(value) },
-          { title: "Сумма", dataIndex: "plannedAmount", align: "right", render: (value: number) => formatMoney(value) }
-        ]}
-        summary={() =>
-          plan.length > 0 ? (
-            <Table.Summary fixed>
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0}>Итого, {plan.length} мес.</Table.Summary.Cell>
-                <Table.Summary.Cell index={1} align="right">
-                  {formatMoney(total)}
-                </Table.Summary.Cell>
-              </Table.Summary.Row>
-            </Table.Summary>
-          ) : null
-        }
-      />
+      {monthsOverBudget > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`В ${monthsOverBudget} мес. плана взносы превышают свободные деньги. Цель всё равно можно сохранить.`}
+        />
+      )}
+
+      {planError && <Alert type="error" message={planError} showIcon style={{ marginBottom: 8 }} />}
+      {planNote && <Alert type="info" message={planNote} showIcon style={{ marginBottom: 8 }} />}
+
+      <Typography.Text strong>План накоплений</Typography.Text>
+
+      <div className="plan-table-wrap">
+        <Table<PlanItem>
+          size="small"
+          rowKey="month"
+          pagination={false}
+          dataSource={plan}
+          locale={{ emptyText: "Укажите сумму и срок или взнос" }}
+          columns={columns}
+        />
+      </div>
+
+      {plan.length > 0 && (
+        <Typography.Text type="secondary">
+          Итого: {formatMoney(total)}, {plan.length} мес.
+        </Typography.Text>
+      )}
     </Modal>
   );
 }

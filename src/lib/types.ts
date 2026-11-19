@@ -34,3 +34,20 @@ export interface DepositSummary {
 }
 
 export const STATUS_COMPLETED = "Выполнена";
+
+export interface BudgetMonth {
+  month: string;
+  income: number | null;
+  incomeIsActual: boolean;
+  settingIncome: number | null;
+  baseExpenses: number;
+  planned: number;
+  deposited: number;
+  // доход − базовые расходы − запланированное на активные цели; null, пока доход не задан
+  free: number | null;
+}
+
+export interface BudgetOverview {
+  configured: boolean;
+  months: BudgetMonth[];
+}

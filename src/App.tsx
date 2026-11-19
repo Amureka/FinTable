@@ -5,14 +5,20 @@ import { PlusOutlined, WalletOutlined } from "@ant-design/icons";
 import CreateGoalModal from "./components/CreateGoalModal";
 import DepositModal from "./components/DepositModal";
 import GoalsDashboard from "./components/GoalsDashboard";
+import BudgetCard from "./components/BudgetCard";
+import BudgetSettingsModal from "./components/BudgetSettingsModal";
 import { USE_MOCK, callApi, resetMockData } from "./lib/api";
-import { Goal } from "./lib/types";
+import { currentMonthKey } from "./lib/format";
+import { BudgetOverview, Goal } from "./lib/types";
 
 export default function App() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [budget, setBudget] = useState<BudgetOverview | null>(null);
+  const [budgetRevision, setBudgetRevision] = useState(0);
 
   const loadGoals = useCallback(async () => {
     setLoading(true);
@@ -25,9 +31,27 @@ export default function App() {
     }
   }, []);
 
+  const loadBudget = useCallback(async () => {
+    try {
+      setBudget(await callApi<BudgetOverview>("getBudgetOverview", { months: [currentMonthKey()] }));
+    } catch (error) {
+      message.error(`Не удалось загрузить бюджет: ${(error as Error).message}`);
+    }
+  }, []);
+
+  // Цели и бюджет зависят друг от друга (план целей уменьшает свободные деньги)
+  const reloadAll = useCallback(() => {
+    loadGoals();
+    loadBudget();
+    setBudgetRevision(value => value + 1);
+  }, [loadGoals, loadBudget]);
+
   useEffect(() => {
     loadGoals();
-  }, [loadGoals]);
+    loadBudget();
+  }, [loadGoals, loadBudget]);
+
+  const currentBudgetMonth = budget?.months[0] ?? null;
 
   return (
     <ConfigProvider locale={ruRU}>
@@ -62,12 +86,33 @@ export default function App() {
             />
           )}
 
+          <BudgetCard
+            configured={budget?.configured === true}
+            month={currentBudgetMonth}
+            loading={budget === null}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onChanged={reloadAll}
+          />
+
           <GoalsDashboard goals={goals} loading={loading} onCreateGoal={() => setCreateOpen(true)} />
         </Layout.Content>
       </Layout>
 
-      <CreateGoalModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={loadGoals} />
-      <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} onSaved={loadGoals} />
+      <CreateGoalModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={reloadAll}
+        onOpenBudgetSettings={() => setSettingsOpen(true)}
+        budgetRevision={budgetRevision}
+      />
+      <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} onSaved={reloadAll} />
+      <BudgetSettingsModal
+        open={settingsOpen}
+        initialIncome={currentBudgetMonth?.settingIncome ?? null}
+        initialExpenses={currentBudgetMonth?.baseExpenses ?? 0}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={reloadAll}
+      />
     </ConfigProvider>
   );
 }

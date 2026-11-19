@@ -12,6 +12,10 @@ const GOALS_SHEET_NAME = "Goals";
 const GOAL_PLAN_SHEET_NAME = "GoalPlan";
 const GOAL_DEPOSITS_SHEET_NAME = "GoalDeposits";
 const DEPOSITS_SHEET_NAME = "Deposits";
+// Настройки бюджета: доход и базовые расходы, действуют с указанного месяца
+const BUDGET_SETTINGS_SHEET_NAME = "BudgetSettings";
+// Фактический доход, полученный в конкретном месяце
+const MONTH_INCOME_SHEET_NAME = "MonthIncome";
 
 // Обязательные заголовки каждого листа (названия должны совпадать)
 const SHEET_HEADERS = {
@@ -21,8 +25,13 @@ const SHEET_HEADERS = {
   ],
   [GOAL_PLAN_SHEET_NAME]: ["goalId", "month", "plannedAmount"],
   [GOAL_DEPOSITS_SHEET_NAME]: ["goalId", "month", "actualAmount"],
-  [DEPOSITS_SHEET_NAME]: ["month", "amount"]
+  [DEPOSITS_SHEET_NAME]: ["month", "amount"],
+  [BUDGET_SETTINGS_SHEET_NAME]: ["effectiveFrom", "monthlyIncome", "baseExpenses"],
+  [MONTH_INCOME_SHEET_NAME]: ["month", "actualIncome"]
 };
+
+// Эти листы создаются автоматически, если их нет в таблице
+const AUTO_CREATED_SHEETS = [BUDGET_SETTINGS_SHEET_NAME, MONTH_INCOME_SHEET_NAME];
 
 const GOAL_STATUS_ACTIVE = "Активна";
 const GOAL_STATUS_COMPLETED = "Выполнена";
@@ -89,6 +98,15 @@ function runAction_(action, data) {
 
     case "saveDeposit":
       return withLock_(() => saveDeposit(data));
+
+    case "getBudgetOverview":
+      return getBudgetOverview(data.months);
+
+    case "saveBudgetSettings":
+      return withLock_(() => saveBudgetSettings(data));
+
+    case "saveMonthIncome":
+      return withLock_(() => saveMonthIncome(data));
 
     default:
       return { success: false, message: "Unknown action" };
@@ -317,6 +335,123 @@ function saveDeposit(data) {
 }
 
 // =========================
+// Бюджет: доход и свободные деньги
+// =========================
+
+// По списку месяцев: доход, базовые расходы, запланированное на цели и свободный остаток.
+// Если доход ещё не задан, configured = false, а income и free = null.
+function getBudgetOverview(requestedMonths) {
+  const months = Array.isArray(requestedMonths) && requestedMonths.length
+    ? requestedMonths.map(m => getMonthKey_(m))
+    : [getMonthKey_()];
+
+  const settings = readTable_(BUDGET_SETTINGS_SHEET_NAME)
+    .filter(row => String(row.effectiveFrom) !== "")
+    .map(row => ({
+      effectiveFrom: normalizeMonth_(row.effectiveFrom),
+      monthlyIncome: Number(row.monthlyIncome) || 0,
+      baseExpenses: Number(row.baseExpenses) || 0
+    }));
+
+  const actualIncomeRows = readTable_(MONTH_INCOME_SHEET_NAME)
+    .filter(row => String(row.month) !== "")
+    .map(row => ({ month: normalizeMonth_(row.month), actualIncome: Number(row.actualIncome) || 0 }));
+
+  const activeGoalIds = readGoals_().filter(isGoalActive_).map(goal => String(goal.id));
+  const plans = readPlanRows_().filter(p => activeGoalIds.indexOf(String(p.goalId)) !== -1);
+  const deposits = readDepositRows_();
+
+  return {
+    configured: settings.length > 0,
+    months: months.map(month => {
+      const setting = findSettingForMonth_(settings, month);
+
+      // Фактический доход месяца важнее значения из настроек; из нескольких записей берём последнюю
+      const actualRows = actualIncomeRows.filter(row => row.month === month);
+      const actualIncome = actualRows.length ? actualRows[actualRows.length - 1].actualIncome : null;
+
+      const income = actualIncome !== null ? actualIncome : (setting ? setting.monthlyIncome : null);
+      const baseExpenses = setting ? setting.baseExpenses : 0;
+
+      const planned = plans
+        .filter(p => p.month === month)
+        .reduce((sum, p) => sum + p.plannedAmount, 0);
+
+      const deposited = deposits
+        .filter(d => d.month === month)
+        .reduce((sum, d) => sum + d.amount, 0);
+
+      return {
+        month: month,
+        income: income,
+        incomeIsActual: actualIncome !== null,
+        // доход из настроек (без поправки на фактически полученный в этом месяце)
+        settingIncome: setting ? setting.monthlyIncome : null,
+        baseExpenses: baseExpenses,
+        planned: planned,
+        deposited: deposited,
+        free: income === null ? null : income - baseExpenses - planned
+      };
+    })
+  };
+}
+
+// Настройка, действующая в месяце: самая поздняя из начавшихся не позже этого месяца.
+// Если все настройки начинаются позже, берём самую раннюю.
+function findSettingForMonth_(settings, month) {
+  if (settings.length === 0) return null;
+
+  // Порядок строк сохраняется, поэтому при равных месяцах побеждает последняя запись
+  let best = null;
+  settings.forEach(setting => {
+    if (setting.effectiveFrom <= month && (best === null || setting.effectiveFrom >= best.effectiveFrom)) {
+      best = setting;
+    }
+  });
+
+  if (best) return best;
+
+  return settings.reduce((earliest, setting) => (setting.effectiveFrom < earliest.effectiveFrom ? setting : earliest));
+}
+
+// data: { monthlyIncome, baseExpenses, effectiveFrom? } — действует с effectiveFrom (по умолчанию с текущего месяца)
+function saveBudgetSettings(data) {
+  const monthlyIncome = Number(data.monthlyIncome);
+  const baseExpenses = Number(data.baseExpenses || 0);
+
+  if (!isFinite(monthlyIncome) || monthlyIncome < 0) {
+    throw new Error("Доход не может быть отрицательным");
+  }
+  if (!isFinite(baseExpenses) || baseExpenses < 0) {
+    throw new Error("Расходы не могут быть отрицательными");
+  }
+
+  writeRows_(BUDGET_SETTINGS_SHEET_NAME, [{
+    effectiveFrom: getMonthKey_(data.effectiveFrom),
+    monthlyIncome: monthlyIncome,
+    baseExpenses: baseExpenses
+  }]);
+
+  return { success: true };
+}
+
+// data: { month, actualIncome } — сколько реально получено в этом месяце
+function saveMonthIncome(data) {
+  const actualIncome = Number(data.actualIncome);
+
+  if (!isFinite(actualIncome) || actualIncome < 0) {
+    throw new Error("Доход не может быть отрицательным");
+  }
+
+  writeRows_(MONTH_INCOME_SHEET_NAME, [{
+    month: getMonthKey_(data.month),
+    actualIncome: actualIncome
+  }]);
+
+  return { success: true };
+}
+
+// =========================
 // Чтение листов
 // =========================
 
@@ -378,11 +513,16 @@ function getSheet_(sheetName) {
     .getActiveSpreadsheet()
     .getSheetByName(sheetName);
 
-  if (!sheet) {
-    throw new Error("Не найден лист «" + sheetName + "»");
+  if (sheet) return sheet;
+
+  if (AUTO_CREATED_SHEETS.indexOf(sheetName) !== -1) {
+    const headers = SHEET_HEADERS[sheetName];
+    const created = SpreadsheetApp.getActiveSpreadsheet().insertSheet(sheetName);
+    created.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return created;
   }
 
-  return sheet;
+  throw new Error("Не найден лист «" + sheetName + "»");
 }
 
 // Возвращает { имяКолонки: индекс (с 0) }. Проверяет обязательные заголовки.
