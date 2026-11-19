@@ -1,0 +1,4 @@
+node_modules
+dist
+public/mock/Code.gs.js
+.env.local
