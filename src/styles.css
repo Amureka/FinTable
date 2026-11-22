@@ -6,6 +6,7 @@
   --muted: #6c647c;
   --accent: #6843bf;
   --line: #eae5f0;
+  --motion-ease: cubic-bezier(.2, .75, .25, 1);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -267,22 +268,22 @@ h1, h2, h3, p { margin: 0; }
 .goal-amount strong { font-size: 21px; letter-spacing: -.04em; }
 .goal-amount span, .goal-detail, .goal-date { color: var(--muted); font-size: 12px; }
 .goal-progress-row { margin-top: 8px; color: #5b359b; font-size: 12px; font-weight: 700; }
-.goal-progress-row progress {
-  appearance: none;
+.goal-progress-track {
   min-width: 0;
   flex: 1;
   height: 7px;
-  border: 0;
   border-radius: 8px;
   background: #eee8f7;
-  color: #794fc9;
   overflow: hidden;
 }
-.goal-progress-row progress::-webkit-progress-bar { background: #eee8f7; }
-.goal-progress-row progress::-webkit-progress-value { border-radius: 8px; background: #794fc9; }
-.goal-progress-row progress::-moz-progress-bar { border-radius: 8px; background: #794fc9; }
-.goal-progress-row progress.completed::-webkit-progress-value { background: #338361; }
-.goal-progress-row progress.completed::-moz-progress-bar { background: #338361; }
+.goal-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6843bf, #9675df);
+  transform-origin: left;
+}
+.goal-progress-track.completed > span { background: linear-gradient(90deg, #27785b, #57a682); }
 .goal-detail { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 7px; }
 .goal-date { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); }
 .goal-date .anticon { margin-right: 3px; }
@@ -291,6 +292,52 @@ h1, h2, h3, p { margin: 0; }
 .month-done { color: #27785b; }
 .current-month-tag { margin-inline: 3px 0; }
 .month-panel .current-month-row > td { background: #faf7fe; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+  .page-header, .balance-card, .reserve-card, .dashboard-section {
+    animation: dashboard-enter 440ms var(--motion-ease) backwards;
+  }
+  .balance-card { animation-delay: 45ms; }
+  .reserve-card { animation-delay: 85ms; }
+  #budget { animation-delay: 120ms; }
+  #goals { animation-delay: 155ms; }
+  #plan { animation-delay: 190ms; }
+  .balance-art .anticon { animation: balance-arrow-enter 640ms var(--motion-ease) 70ms backwards; }
+  .navigation a { transition: background-color 160ms ease, color 160ms ease; }
+  .page-actions .ant-btn { transition: background-color 160ms ease, border-color 160ms ease, transform 160ms var(--motion-ease); }
+  .page-actions .ant-btn:active { transform: translateY(1px) scale(.98); }
+  .goal-progress-track > span {
+    animation: goal-progress-enter 520ms var(--motion-ease) backwards;
+    transition: width 420ms var(--motion-ease);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .goal-card, .metric-card {
+    transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms var(--motion-ease);
+  }
+  .goal-card:hover, .metric-card:hover {
+    transform: translateY(-2px);
+    border-color: #d9caed;
+    box-shadow: 0 8px 24px #3b245910;
+  }
+}
+
+@keyframes dashboard-enter {
+  from { opacity: .68; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes balance-arrow-enter {
+  from { opacity: .45; transform: translate(-8px, 8px) rotate(42deg) scale(.84); }
+  to { opacity: 1; transform: translate(0, 0) rotate(42deg) scale(1); }
+}
+
+@keyframes goal-progress-enter {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
 
 @media (max-width: 1130px) {
   .workspace { grid-template-columns: 200px minmax(0, 1fr); }
