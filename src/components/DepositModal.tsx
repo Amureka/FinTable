@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Modal, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, App, Button, Modal, Space, Table, Tag, Typography } from "antd";
 import { callApi } from "../lib/api";
 import { CUSHION_ID, DistributionGoal, distribute, suggestOvercapTarget } from "../lib/distribute";
 import { currentMonthKey, formatMoney, formatMonthLabel } from "../lib/format";
@@ -22,6 +22,7 @@ interface RowData {
 const goalKey = (goal: DepositPreviewGoal) => String(goal.goalId);
 
 export default function DepositModal({ open, onClose, onSaved }: Props) {
+  const { message } = App.useApp();
   const [preview, setPreview] = useState<DepositPreview | null>(null);
   const [summary, setSummary] = useState<DepositSummary | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
@@ -273,7 +274,7 @@ export default function DepositModal({ open, onClose, onSaved }: Props) {
       width={960}
       centered
       className="fit-modal"
-      destroyOnClose
+      destroyOnHidden
     >
       {loadError && <Alert type="error" showIcon message={`Не удалось загрузить данные: ${loadError}`} />}
 

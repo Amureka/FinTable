@@ -8,7 +8,7 @@ export default function MoneyInput(props: InputNumberProps<number>) {
   return (
     <InputNumber<number>
       precision={0}
-      addonAfter="₽"
+      suffix="₽"
       formatter={value => (value === undefined || value === null ? "" : groupFormatter.format(Number(value)))}
       parser={value => (value ?? "").replace(/[\s  ]/g, "") as unknown as number}
       {...props}
