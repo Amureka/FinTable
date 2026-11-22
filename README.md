@@ -14,6 +14,10 @@ npm test         # тесты расчёта плана
 npm run build    # сборка в dist/
 ```
 
+## Android
+
+[Сборка APK для установки на устройство](android/README.md).
+
 ## Публикация
 Сайт собирается и публикуется на GitHub Pages workflow-ом `.github/workflows/deploy.yml` при каждом пуше в `main`.
 Включить один раз: Settings → Pages → Source: **GitHub Actions**.
