@@ -24,13 +24,22 @@ const navigation = [
 ];
 
 export default function App() {
+  const [reduceMotion, setReduceMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = (event: MediaQueryListEvent) => setReduceMotion(event.matches);
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
+
   return (
     <ConfigProvider locale={ruRU} theme={{
       token: {
         colorPrimary: "#6843bf", colorLink: "#6843bf", colorText: "#201834", colorTextSecondary: "#665e77",
         colorSuccess: "#27785b", colorBorder: "#e7e1ef", colorBgLayout: "#f8f7fb",
         borderRadius: 10, fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
-        controlHeight: 38
+        controlHeight: 38, motion: !reduceMotion
       },
       components: {
         Button: { fontWeight: 600, primaryShadow: "none", defaultShadow: "none" },

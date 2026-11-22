@@ -61,8 +61,12 @@ export default function GoalsDashboard({ goals, loading, onCreateGoal, onEdit, o
                 <h3>{goal.name}</h3>
                 <div className="goal-amount"><strong>{formatMoney(goal.currentAmount)}</strong> <span>из {formatMoney(goal.targetAmount)}</span></div>
                 <div className="goal-progress-row">
-                  <progress aria-label={`Прогресс цели «${goal.name}»`} className={completed ? "completed" : ""} value={percent} max={100} />
-                  <span>{percent}%</span>
+                  <div className={`goal-progress-track${completed ? " completed" : ""}`}
+                    role="progressbar" aria-label={`Прогресс цели «${goal.name}»`}
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                  <span aria-hidden="true">{percent}%</span>
                 </div>
                 <div className="goal-detail">
                   <span>Осталось {formatMoney(Math.max(goal.targetAmount - goal.currentAmount, 0))}</span>
