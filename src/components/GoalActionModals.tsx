@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Form, Input, Modal, Radio, Select, Typography, message } from "antd";
+import { Alert, App, Form, Input, Modal, Radio, Select, Typography } from "antd";
 import { callApi } from "../lib/api";
 import { CUSHION_ID } from "../lib/distribute";
 import { currentMonthKey, formatMoney } from "../lib/format";
@@ -17,6 +17,7 @@ interface EditProps {
 }
 
 export function EditGoalModal({ goal, onClose, onDone }: EditProps) {
+  const { message } = App.useApp();
   const [name, setName] = useState("");
   const [target, setTarget] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -50,7 +51,7 @@ export function EditGoalModal({ goal, onClose, onDone }: EditProps) {
   }
 
   return (
-    <Modal open title="Изменить цель" onCancel={onClose} onOk={save} okText="Сохранить" cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnClose>
+    <Modal open title="Изменить цель" onCancel={onClose} onOk={save} okText="Сохранить" cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnHidden>
       <Form layout="vertical" requiredMark={false}>
         <Form.Item label="Название цели">
           <Input value={name} maxLength={80} onChange={e => setName(e.target.value)} />
@@ -82,6 +83,7 @@ interface DeleteProps {
 }
 
 export function DeleteGoalModal({ goal, goals, onClose, onDone }: DeleteProps) {
+  const { message } = App.useApp();
   const [dest, setDest] = useState<string>(CUSHION_ID);
   const [saving, setSaving] = useState(false);
 
@@ -111,7 +113,7 @@ export function DeleteGoalModal({ goal, goals, onClose, onDone }: DeleteProps) {
   }
 
   return (
-    <Modal open title={`Удалить цель «${goal.name}»?`} onCancel={onClose} onOk={remove} okText="Удалить" okButtonProps={{ danger: true }} cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnClose>
+    <Modal open title={`Удалить цель «${goal.name}»?`} onCancel={onClose} onOk={remove} okText="Удалить" okButtonProps={{ danger: true }} cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnHidden>
       {hasMoney ? (
         <>
           <Typography.Paragraph>
@@ -138,6 +140,7 @@ interface TransferProps {
 }
 
 export function TransferModal({ open, goals, cushionAmount, initialFromId, onClose, onDone }: TransferProps) {
+  const { message } = App.useApp();
   const [type, setType] = useState<"transfer" | "writeoff">("transfer");
   const [fromId, setFromId] = useState<string>(CUSHION_ID);
   const [toId, setToId] = useState<string | undefined>();
@@ -187,7 +190,7 @@ export function TransferModal({ open, goals, cushionAmount, initialFromId, onClo
   }
 
   return (
-    <Modal open={open} title="Перенести или списать" onCancel={onClose} onOk={save} okText="Выполнить" cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnClose>
+    <Modal open={open} title="Перенести или списать" onCancel={onClose} onOk={save} okText="Выполнить" cancelText="Отмена" confirmLoading={saving} centered className="fit-modal" destroyOnHidden>
       <Form layout="vertical" requiredMark={false}>
         <Form.Item>
           <Radio.Group

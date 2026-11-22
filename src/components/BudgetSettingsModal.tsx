@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Form, Modal, Typography, message } from "antd";
+import { App, Form, Modal, Typography } from "antd";
 import { callApi } from "../lib/api";
 import MoneyInput from "./MoneyInput";
 
@@ -17,6 +17,7 @@ interface Values {
 }
 
 export default function BudgetSettingsModal({ open, initialIncome, initialExpenses, onClose, onSaved }: Props) {
+  const { message } = App.useApp();
   const [form] = Form.useForm<Values>();
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +60,7 @@ export default function BudgetSettingsModal({ open, initialIncome, initialExpens
       confirmLoading={saving}
       centered
       className="fit-modal"
-      destroyOnClose
+      destroyOnHidden
     >
       <Typography.Paragraph type="secondary">
         Доход и расходы действуют с текущего месяца и на будущее. Сколько получено в конкретном месяце, можно поправить на главном экране.

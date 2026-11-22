@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Table, Typography, message } from "antd";
+import { Alert, App, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Table, Typography } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { callApi } from "../lib/api";
 import MoneyInput from "./MoneyInput";
@@ -41,6 +41,7 @@ function toMonthRef(date: Dayjs): MonthRef {
 }
 
 export default function CreateGoalModal({ open, onClose, onCreated, onOpenBudgetSettings, budgetRevision }: Props) {
+  const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
   const [plan, setPlan] = useState<PlanItem[]>([]);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -221,7 +222,7 @@ export default function CreateGoalModal({ open, onClose, onCreated, onOpenBudget
       width={640}
       centered
       className="fit-modal fit-modal-table"
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical" onValuesChange={handleValuesChange} requiredMark={false} className="compact-form">
         <Row gutter={12}>
